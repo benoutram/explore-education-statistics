@@ -111,6 +111,8 @@ namespace GovUk.Education.ExploreEducationStatistics.Admin
                     .EnableSensitiveDataLogging(HostEnvironment.IsDevelopment())
             );
 
+            services.AddHttpClient<IHdfsService, HdfsService>();
+
             // remove default Microsoft remapping of the name of the OpenID "roles" claim mapping
             JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Remove("roles");
             JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Remove("role");
@@ -311,7 +313,6 @@ namespace GovUk.Education.ExploreEducationStatistics.Admin
                 return new LoggingNotificationClient(logger);
             });
             services.AddTransient<IEmailService, EmailService>();
-
             services.AddTransient<IBoundaryLevelService, BoundaryLevelService>();
             services.AddTransient<ITableBuilderService, TableBuilderService>();
             services.AddTransient<IFilterService, FilterService>();

@@ -170,6 +170,7 @@ namespace GovUk.Education.ExploreEducationStatistics.Admin.Tests.Services
             IReleaseFileRepository releaseFileRepository = null,
             IReleaseDataFileRepository releaseDataFileRepository = null,
             IDataImportService dataImportService = null,
+            IHdfsService hdfsService = null,
             IUserService userService = null)
         {
             return new ReleaseDataFileService(
@@ -184,6 +185,7 @@ namespace GovUk.Education.ExploreEducationStatistics.Admin.Tests.Services
                 releaseFileRepository ?? new ReleaseFileRepository(contentDbContext),
                 releaseDataFileRepository ?? new ReleaseDataFileRepository(contentDbContext),
                 dataImportService ?? new Mock<IDataImportService>().Object,
+                hdfsService ?? new Mock<IHdfsService>().Object,
                 userService ?? new Mock<IUserService>().Object
             );
         }

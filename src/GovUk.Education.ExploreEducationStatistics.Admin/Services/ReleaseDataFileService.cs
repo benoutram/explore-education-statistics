@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using GovUk.Education.ExploreEducationStatistics.Admin.Models;
@@ -18,10 +19,12 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using static GovUk.Education.ExploreEducationStatistics.Common.Services.FileStorageUtils;
-using static GovUk.Education.ExploreEducationStatistics.Common.BlobContainers;
 using static GovUk.Education.ExploreEducationStatistics.Common.Model.FileType;
 using Release = GovUk.Education.ExploreEducationStatistics.Content.Model.Release;
 using Unit = GovUk.Education.ExploreEducationStatistics.Common.Model.Unit;
+using Microsoft.Data.SqlClient;
+using static GovUk.Education.ExploreEducationStatistics.Common.BlobContainers;
+using File = GovUk.Education.ExploreEducationStatistics.Content.Model.File;
 
 namespace GovUk.Education.ExploreEducationStatistics.Admin.Services
 {
@@ -38,6 +41,7 @@ namespace GovUk.Education.ExploreEducationStatistics.Admin.Services
         private readonly IReleaseFileRepository _releaseFileRepository;
         private readonly IReleaseDataFileRepository _releaseDataFileRepository;
         private readonly IDataImportService _dataImportService;
+        private readonly IHdfsService _hdfsService;
         private readonly IUserService _userService;
 
         public ReleaseDataFileService(ContentDbContext contentDbContext,
@@ -51,6 +55,7 @@ namespace GovUk.Education.ExploreEducationStatistics.Admin.Services
             IReleaseFileRepository releaseFileRepository,
             IReleaseDataFileRepository releaseDataFileRepository,
             IDataImportService dataImportService,
+            IHdfsService hdfsService,
             IUserService userService)
         {
             _contentDbContext = contentDbContext;
@@ -64,6 +69,7 @@ namespace GovUk.Education.ExploreEducationStatistics.Admin.Services
             _releaseFileRepository = releaseFileRepository;
             _releaseDataFileRepository = releaseDataFileRepository;
             _dataImportService = dataImportService;
+            _hdfsService = hdfsService;
             _userService = userService;
         }
 
@@ -242,11 +248,14 @@ namespace GovUk.Education.ExploreEducationStatistics.Admin.Services
                                         await UploadFileToStorage(dataFile, dataFormFile, dataInfo);
                                         await UploadFileToStorage(metaFile, metaFormFile);
 
-                                        await _dataImportService.Import(
-                                            subjectId: subjectId,
-                                            dataFile: dataFile,
-                                            metaFile: metaFile,
-                                            formFile: dataFormFile);
+                                        var statsFileColumns = FirstLine(dataFormFile);
+                                        await ImportSubject(releaseId, dataFile, metaFile, validSubjectName, statsFileColumns);
+                                        
+                                        // await _dataImportService.Import(
+                                        //    subjectId: subjectId,
+                                        //    dataFile: dataFile,
+                                        //    metaFile: metaFile,
+                                        //    formFile: dataFormFile);
 
                                         var blob = await _blobStorageService.GetBlob(
                                             PrivateReleaseFiles,
@@ -484,6 +493,9 @@ namespace GovUk.Education.ExploreEducationStatistics.Admin.Services
                 file: formFile,
                 metadata: metadata
             );
+
+            // Also upload to HDFS
+            await _hdfsService.PutFile(file, formFile);
         }
 
         private async Task<File> GetAssociatedMetaFile(Guid releaseId, File dataFile)
@@ -500,6 +512,41 @@ namespace GovUk.Education.ExploreEducationStatistics.Admin.Services
         private async Task DeleteBatchFiles(File dataFile)
         {
             await _blobStorageService.DeleteBlobs(PrivateReleaseFiles, dataFile.BatchesPath());
+        }
+
+        public static string FirstLine(IFormFile file)
+        {
+            var reader = new StreamReader(file.OpenReadStream());
+            if (reader.Peek() >= 0)
+            {
+                return reader.ReadLine();
+            }
+
+            return null;
+        }
+
+        private async Task ImportSubject(Guid releaseId, File statsFile, File metaFile, string name, string statsFileColumns)
+        {
+            var releaseIdParam = new SqlParameter("releaseId", releaseId);
+            var subjectLabelParam = new SqlParameter("subjectLabel", name);
+            var statsFileColumnsParam = new SqlParameter("statsFileColumns", statsFileColumns);
+
+            var statsFileLocationParam = new SqlParameter("statsFileLocation",
+                $"/tmp/statistics/{releaseId}/{statsFile.Filename}");
+            var metaFileLocationParam = new SqlParameter("metaFileLocation",
+                $"/tmp/statistics/{releaseId}/{metaFile.Filename}");
+
+            await _statisticsDbContext.Database.ExecuteSqlRawAsync("EXEC dbo.AddSubject " +
+                                                                   "@releaseId," +
+                                                                   "@subjectLabel," +
+                                                                   "@statsFileColumns," +
+                                                                   "@statsFileLocation," + 
+                                                                   "@metaFileLocation",
+                releaseIdParam,
+                subjectLabelParam,
+                statsFileColumnsParam,
+                statsFileLocationParam,
+                metaFileLocationParam);
         }
     }
 }
